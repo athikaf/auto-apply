@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: 'autoapply-test'
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: autoapply
+  namespace: 'autoapply-test'
+  labels:
+    component: autoapply
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: autoapply
+  namespace: 'autoapply-test'
+  labels:
+    component: autoapply
+rules:
+- apiGroups: ['*']
+  resources: ['*']
+  verbs: ['*']
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: autoapply
+  namespace: 'autoapply-test'
+  labels:
+    component: autoapply
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: autoapply
+subjects:
+- kind: ServiceAccount
+  name: autoapply
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: autoapply
+  namespace: 'autoapply-test'
+  labels:
+    component: autoapply
+spec:
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      component: autoapply
+      app: autoapply
+  template:
+    metadata:
+      labels:
+        component: autoapply
+        app: autoapply
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+      serviceAccountName: autoapply
+      containers:
+        - name: autoapply
+          image: 'autoapply/autoapply:0.21.0-kubectl'
+          args: ['env:AUTOAPPLY_CONFIG']
+          env:
+            - name: AUTOAPPLY_CONFIG
+              value: |
+                loop:
+                  sleep: 30
+                  commands:
+                    - git clone --depth 1 --single-branch 'https://github.com/athikaf/auto-apply.git' '.'
+                    - kubectl apply --prune -l 'provider!=kubernetes,component!=autoapply' --prune-allowlist 'core/v1/ConfigMap' --prune-allowlist 'core/v1/Endpoints' --prune-allowlist 'core/v1/PersistentVolumeClaim' --prune-allowlist 'core/v1/Pod' --prune-allowlist 'core/v1/ReplicationController' --prune-allowlist 'core/v1/Secret' --prune-allowlist 'core/v1/Service' --prune-allowlist 'batch/v1/Job' --prune-allowlist 'batch/v1/CronJob' --prune-allowlist 'networking.k8s.io/v1/Ingress' --prune-allowlist 'apps/v1/DaemonSet' --prune-allowlist 'apps/v1/ReplicaSet' --prune-allowlist 'apps/v1/StatefulSet' --prune-allowlist 'apps/v1/Deployment' -f 'common' -f 'dev'
+      tolerations:
+        - effect: NoExecute
+          operator: Exists
